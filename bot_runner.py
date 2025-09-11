@@ -1,69 +1,78 @@
 import subprocess
+import threading
 import signal
+import sys
 import time
-import requests
+import socket
 from pyngrok import ngrok
+import requests
 from config import TELEGRAM_TOKEN
 
-TOKEN = TELEGRAM_TOKEN
+processes = []
 
-def main():
-    processes = []
+def stream_output(proc, name):
+    for line in iter(proc.stdout.readline, b''):
+        if line:
+            print(f"[{name}] {line.decode().rstrip()}")
+    proc.stdout.close()
 
-    try:
-        # 1. Start Redis
-        print("🟥 Starting Redis server...")
-        redis_proc = subprocess.Popen(
-            ["redis-server"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        processes.append(redis_proc)
-        time.sleep(2)
+def start_process(name, cmd):
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1
+    )
+    processes.append(proc)
+    t = threading.Thread(target=stream_output, args=(proc, name), daemon=True)
+    t.start()
+    return proc
 
-        # 2. Start Celery worker (assuming you have tasks.py in project root)
-        print("⚡ Starting Celery worker...")
-        celery_proc = subprocess.Popen(
-            ["celery", "-A", "tasks", "worker", "--loglevel=info"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        processes.append(celery_proc)
-        time.sleep(2)
+def find_free_port():
+    """Returns a free port on localhost"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        return s.getsockname()[1]
 
-        # 3. Start ngrok
-        print("🌍 Starting ngrok tunnel...")
-        tunnel = ngrok.connect(8000)
-        public_url = tunnel.public_url
-        print(f"✅ Ngrok public URL: {public_url}", flush=True)
+try:
+    # --- Start Redis ---
+    print("🟥 Starting Redis...")
+    start_process("REDIS", ["redis-server"])
+    time.sleep(2)
 
-        # 4. Reset & set webhook
-        print("🔗 Setting Telegram webhook...")
-        requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
-        set_hook = requests.get(
-            f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={public_url}/webhook"
-        )
-        print("SetWebhook response:", set_hook.json(), flush=True)
+    # --- Start Celery ---
+    print("⚡ Starting Celery worker...")
+    start_process("CELERY", ["celery", "-A", "tasks", "worker", "--loglevel=info"])
+    time.sleep(2)
 
-        # 5. Start FastAPI server
-        print("🚀 Starting FastAPI bot server...")
-        server_proc = subprocess.Popen(
-            ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        processes.append(server_proc)
+    # --- Find free port for FastAPI ---
+    port = find_free_port()
+    print(f"🚀 Starting FastAPI server on port {port}...")
+    start_process("FASTAPI", ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", str(port)])
+    time.sleep(2)
 
-        # 6. Keep running until Ctrl+C
-        print("✅ Bot is running. Press Ctrl+C to stop.")
-        while True:
-            time.sleep(1)
+    # --- Start ngrok tunnel ---
+    print("🌐 Starting ngrok tunnel...")
+    tunnel = ngrok.connect(port)
+    public_url = tunnel.public_url
+    print("Ngrok public URL:", public_url)
 
-    except KeyboardInterrupt:
-        print("\n🛑 Stopping all processes...")
-        for proc in processes:
-            proc.send_signal(signal.SIGTERM)
-        print("✅ Clean exit.")
+    # --- Set Telegram webhook ---
+    print("🔗 Setting Telegram webhook...")
+    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+    r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={public_url}/webhook")
+    print("SetWebhook response:", r.json())
 
-if __name__ == "__main__":
-    main()
+    print("✅ All services started. Send a message to your bot in Telegram!")
+
+    # Keep runner alive
+    while True:
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("🛑 Stopping all services...")
+    tunnel.kill()
+    for proc in processes:
+        proc.send_signal(signal.SIGTERM)
+    print("✅ All services stopped.")
+    sys.exit(0)
