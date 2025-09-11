@@ -11,13 +11,33 @@ def main():
     processes = []
 
     try:
-        # 1. Start ngrok
+        # 1. Start Redis
+        print("🟥 Starting Redis server...")
+        redis_proc = subprocess.Popen(
+            ["redis-server"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        processes.append(redis_proc)
+        time.sleep(2)
+
+        # 2. Start Celery worker (assuming you have tasks.py in project root)
+        print("⚡ Starting Celery worker...")
+        celery_proc = subprocess.Popen(
+            ["celery", "-A", "tasks", "worker", "--loglevel=info"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        processes.append(celery_proc)
+        time.sleep(2)
+
+        # 3. Start ngrok
         print("🌍 Starting ngrok tunnel...")
         tunnel = ngrok.connect(8000)
         public_url = tunnel.public_url
         print(f"✅ Ngrok public URL: {public_url}", flush=True)
 
-        # 2. Reset & set webhook
+        # 4. Reset & set webhook
         print("🔗 Setting Telegram webhook...")
         requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
         set_hook = requests.get(
@@ -25,7 +45,7 @@ def main():
         )
         print("SetWebhook response:", set_hook.json(), flush=True)
 
-        # 3. Start FastAPI server with uvicorn
+        # 5. Start FastAPI server
         print("🚀 Starting FastAPI bot server...")
         server_proc = subprocess.Popen(
             ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"],
@@ -34,7 +54,7 @@ def main():
         )
         processes.append(server_proc)
 
-        # 4. Keep running until Ctrl+C
+        # 6. Keep running until Ctrl+C
         print("✅ Bot is running. Press Ctrl+C to stop.")
         while True:
             time.sleep(1)
