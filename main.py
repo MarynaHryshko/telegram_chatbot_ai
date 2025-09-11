@@ -1,20 +1,25 @@
-from flask import Flask, request
+from fastapi import FastAPI, Request
 import requests
-from dotenv import load_dotenv
-import os
+from config import TELEGRAM_TOKEN, ADMINS, ALLOWED_USERS
+import logging
+import subprocess
+import signal
+import time
+import requests
 from pyngrok import ngrok
 
-load_dotenv()
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-app = Flask(__name__)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    print("Headers:", dict(request.headers), flush=True)
-    print("Body:", request.data, flush=True)
+TOKEN = TELEGRAM_TOKEN
 
-    data = request.json
+app = FastAPI()
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
     print("RAW update:", data, flush=True)
 
     if "message" in data:
@@ -26,26 +31,4 @@ def webhook():
             json={"chat_id": chat_id, "text": reply}
         )
 
-    #return {"ok": True}
-    # ✅ Explicit 200 OK response
-    return {"ok": True}, 200
-
-
-if __name__ == "__main__":
-    # Start ngrok tunnel
-    tunnel = ngrok.connect(5000)
-    public_url = tunnel.public_url  # ✅ get clean https://... string
-    print("Ngrok public URL:", public_url, flush=True)
-
-    # Reset webhook
-    requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
-    set_hook = requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={public_url}/webhook")
-    print("SetWebhook response:", set_hook.json(), flush=True)
-
-    # Confirm webhook info
-    info = requests.get(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo").json()
-    print("Webhook Info:", info, flush=True)
-
-    # Run Flask
-    #app.run(port=5000)
-    app.run(host="0.0.0.0", port=5000)
+    return {"ok": True}
