@@ -1,3 +1,4 @@
+# utils.py
 import logging
 from celery.exceptions import Retry
 from tasks import process_user_message, process_pdf_task
@@ -5,7 +6,7 @@ from tasks import process_user_message, process_pdf_task
 logger = logging.getLogger(__name__)
 
 
-def send_to_celery(user_id, message_or_path, context_or_type):
+def send_to_celery(user_id, message_or_path, context_or_type, processing_message_id=None):
     """Send task to Celery with error handling"""
     try:
         if isinstance(context_or_type, str) and context_or_type in ["global", "user"]:
@@ -15,7 +16,7 @@ def send_to_celery(user_id, message_or_path, context_or_type):
         else:
             # Message processing
             logger.info(f"Enqueueing message task for user {user_id}: {message_or_path[:50]}...")
-            task = process_user_message.delay(user_id, message_or_path, context_or_type)
+            task = process_user_message.delay(user_id, message_or_path, context_or_type, processing_message_id)
 
         logger.info(f"Task enqueued successfully with ID: {task.id}")
         return True

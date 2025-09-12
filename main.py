@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, Request
 from config import TELEGRAM_TOKEN, ADMINS, ALLOWED_USERS
 import logging
@@ -52,16 +53,26 @@ async def webhook(request: Request):
                 context_text = retrieve_from_kbs(text, user_id)
                 logger.info(f"Retrieved context length: {len(context_text) if context_text else 0}")
 
-                # Send to Celery
-                logger.info("Sending task to Celery...")
-                ok = send_to_celery(user_id, text, context_text)
+                # Send processing message and get its ID
+                logger.info("Sending processing message...")
+                processing_msg = await bot.send_message(chat_id=user_id, text="⏳ Processing your question...")
+                processing_message_id = processing_msg.message_id
+                logger.info(f"Processing message sent with ID: {processing_message_id}")
 
-                if ok:
-                    logger.info("Task successfully enqueued, sending acknowledgment")
-                    await bot.send_message(chat_id=user_id, text="⏳ Processing your question...")
-                else:
+                # Send to Celery with the processing message ID
+                logger.info("Sending task to Celery...")
+                ok = send_to_celery(user_id, text, context_text, processing_message_id)
+
+                if not ok:
                     logger.error("Failed to enqueue task")
+                    # Delete processing message if task failed to enqueue
+                    try:
+                        await bot.delete_message(chat_id=user_id, message_id=processing_message_id)
+                    except:
+                        pass
                     await bot.send_message(chat_id=user_id, text="⚠️ Could not process your request right now.")
+                else:
+                    logger.info("Task successfully enqueued")
 
             except Exception as e:
                 logger.error(f"Error processing text message: {e}")
