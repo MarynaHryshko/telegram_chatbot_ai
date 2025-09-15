@@ -38,7 +38,7 @@ async def webhook(request: Request):
         msg = data["message"]
         user_id = msg["from"]["id"]
 
-        logger.info(f"Processing message from user {user_id}")
+        logger.info(f"Processing message from user {user_id}: {msg}")
 
         if not is_allowed(user_id):
             logger.warning(f"Access denied for user {user_id}")

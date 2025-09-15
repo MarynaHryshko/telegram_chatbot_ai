@@ -170,13 +170,31 @@ def process_pdf_task(self, file_path, kb_type, user_id):
         # Your PDF processing logic here
         # text = extract_text_from_pdf(file_path)
         # ... process and store in KB
+        #text = extract_text_from_pdf(file_path)
+        kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+        chunks_added = extract_text_from_pdf(file_path, kb)
+        logger.info(f"[TASK-{task_id}] PDF processing completed successfully")
+
+        # Notify user
+        # requests.post(
+        #     f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        #     json={"chat_id": user_id, "text": "✅ PDF processed successfully!"},
+        #     timeout=10
+        # )
+
+        # ✅ Push confirmation to Telegram
+        msg = (
+            f"✅ PDF successfully added to your personal knowledge base ({chunks_added} chunks)."
+            if kb_type == "user" else
+            f"✅ PDF added to the global knowledge base ({chunks_added} chunks)."
+        )
 
         logger.info(f"[TASK-{task_id}] PDF processing completed successfully")
 
         # Notify user
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": user_id, "text": "✅ PDF processed successfully!"},
+            json={"chat_id": user_id, "text": msg},
             timeout=10
         )
 
