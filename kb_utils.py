@@ -1,15 +1,14 @@
 # kb_utils.py
-import os, uuid, re
+import json
+import re
 from pathlib import Path
 import chromadb
 from chromadb.utils import embedding_functions
-import pdfplumber
-from pdf2image import convert_from_path
-import pytesseract
-from config import PERSIST_DIR, OPENAI_API_KEY, MAX_CONTEXT_CHARS
+from config import PERSIST_DIR, OPENAI_API_KEY, EMBEDDING_MODEL_NAME#, TELEGRAM_TOKEN, MAX_CONTEXT_CHARS
 import logging
 from logging_config import setup_logging
 import traceback
+import tiktoken
 
 
 # Setup logging
@@ -21,12 +20,6 @@ embedding_function = None
 global_kb = None
 # Per-user KB cache
 user_kbs = {}
-
-# === Vector DB Setup ===
-# chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
-# embedding_func = embedding_functions.OpenAIEmbeddingFunction(
-#     api_key=OPENAI_API_KEY, model_name="text-embedding-3-small"
-# )
 
 
 # Initialize ChromaDB client
@@ -42,11 +35,8 @@ except Exception as e:
 # Initialize embedding function
 try:
     logger.info("Setting up embedding function...")
-    # embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-    #     model_name="all-MiniLM-L6-v2"
-    # )
     embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=OPENAI_API_KEY, model_name="text-embedding-3-small"
+        api_key=OPENAI_API_KEY, model_name=EMBEDDING_MODEL_NAME
     )
     logger.info("Embedding function setup completed")
 except Exception as e:
@@ -54,9 +44,8 @@ except Exception as e:
     logger.error(f"Traceback: {traceback.format_exc()}")
     raise
 
-###!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # Delete old collection
-chroma_client.delete_collection("global_kb")
+#chroma_client.delete_collection("global_kb")
 
 # Initialize global knowledge base
 try:
@@ -74,17 +63,11 @@ except Exception as e:
     raise
 
 
-# def get_user_kb(user_id: int):
-#     if user_id not in user_kbs:
-#         user_kbs[user_id] = chroma_client.get_or_create_collection(
-#             name=f"user_{user_id}", embedding_function=embedding_func
-#         )
-#     return user_kbs[user_id]
 def get_user_kb(user_id: str):
     """Get or create user-specific knowledge base with logging"""
     kb_name = f"user_kb_{user_id}"
- ####### !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    chroma_client.delete_collection(kb_name)
+
+ #   chroma_client.delete_collection(kb_name)
 
     logger.info(f"Getting KB for user {user_id} (collection: {kb_name})")
 
@@ -110,122 +93,113 @@ def clean_text(text):
     logger.info(f"Text is cleaned")
     return text.strip()
 
-def chunk_text(text, chunk_size=800, overlap=100):
-    # chunks = []
-    # start = 0
-    # while start < len(text):
-    #     end = min(start + chunk_size, len(text))
-    #     chunks.append(text[start:end])
-    #     start += chunk_size - overlap
-    # return chunks
-    """Split text into overlapping chunks with logging"""
-    logger.info(f"Chunking text of length {len(text)} with chunk_size={chunk_size}, overlap={overlap}")
 
-    if not text or len(text) == 0:
-        logger.warning("Empty text provided for chunking")
-        return []
+def add_embeddings_to_kb(embeddings_file, kb_type, user_id, source_name=None):
+     with open(embeddings_file, "r", encoding="utf-8") as f:
+         data = json.load(f)
 
-    try:
-        chunks = []
-        start = 0
+     kb = global_kb if kb_type == "global" else get_user_kb(user_id)
 
-        while start < len(text):
-            end = min(start + chunk_size, len(text))
-            chunk = text[start:end].strip()
+     ids = [f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}" for d in data]
+     texts = [d["text"] for d in data]
+     metadatas = [d["metadata"] for d in data]
+     embeddings = [d["embedding"] for d in data]
+     logger.info(f"Adding {len(texts)} chunks from {embeddings_file} to KB")
+     kb.add(
+         ids=ids,
+         documents=texts,
+         metadatas=metadatas,
+         embeddings=embeddings
+     )
+     logger.info(f"✅ Added {len(ids)} docs. Collection now has {kb.count()} docs.")
 
-            if chunk:  # Only add non-empty chunks
-                chunks.append(chunk)
+# def process_pdf_json(preprocessed_json_path, kb_type, user_id):
+#     """
+#     Fully safe: reads preprocessed JSON, computes embeddings, adds to KB,
+#     and sends Telegram notification. No Celery heavy tasks needed.
+#     """
+#     try:
+#         # --- Load preprocessed JSON ---
+#         with open(preprocessed_json_path, "r", encoding="utf-8") as f:
+#             data = json.load(f)
+#
+#         all_chunks = []
+#         all_metadata = []
+#         all_ids = []
+#
+#         for page_num, text in enumerate(data["pages"]):
+#             if not text:
+#                 continue
+#             chunks = chunk_text(text)
+#             all_chunks.extend(chunks)
+#             all_metadata.extend([{"source": data["file_name"], "page": page_num, "chunk_index": i}
+#                                  for i in range(len(chunks))])
+#             all_ids.extend([f"{data['file_name']}_p{page_num}_c{i}" for i in range(len(chunks))])
+#
+#         if not all_chunks:
+#             logger.warning(f"No text found in {preprocessed_json_path}")
+#             return 0
+#
+#         # --- Compute embeddings (safe in main thread) ---
+#         embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+#             api_key=OPENAI_API_KEY,
+#             model_name=EMBEDDING_MODEL_NAME
+#         )
+#         embeddings = embedding_function(all_chunks)
+#
+#         # --- Add to KB ---
+#         kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+#         kb.add(
+#             ids=all_ids,
+#             documents=all_chunks,
+#             metadatas=all_metadata,
+#             embeddings=embeddings
+#         )
+#
+#         chunks_added = len(all_chunks)
+#         logger.info(f"✅ Added {chunks_added} chunks from {data['file_name']} to KB")
+#
+#         # --- Notify user on Telegram ---
+#         msg = (f"✅ PDF successfully added to your personal KB ({chunks_added} chunks)."
+#                if kb_type == "user" else
+#                f"✅ PDF added to the global KB ({chunks_added} chunks).")
+#         requests.post(
+#             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+#             json={"chat_id": user_id, "text": msg},
+#             timeout=10
+#         )
+#
+#         return chunks_added
+#
+#     except Exception as e:
+#         logger.error(f"Failed to process PDF JSON {preprocessed_json_path}: {e}")
+#         logger.error(traceback.format_exc())
+#         # Notify user of error
+#         try:
+#             requests.post(
+#                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+#                 json={"chat_id": user_id, "text": "⚠️ Failed to process PDF. Please try again."},
+#                 timeout=10
+#             )
+#         except Exception as send_error:
+#             logger.error(f"Failed to send Telegram error message: {send_error}")
+#         return 0
 
-            if end >= len(text):
-                break
+# def test_kb_add(kb):
+#     try:
+#         # Test with minimal data
+#         logger.info("Starting KB add test ...")
+#         test_chunks = ["test document"]
+#         test_metadata = [{"source": "test", "page": 0, "chunk_index": 0}]
+#         test_ids = ["test_id_1"]
+#
+#         kb.add(documents=test_chunks, metadatas=test_metadata, ids=test_ids)
+#         logger.info("KB add test successful")
+#         return True
+#     except Exception as e:
+#         logger.error(f"KB add test failed: {e}")
+#         return False
 
-            # Move start position back by overlap amount for next chunk
-            start = end - overlap
-            if start < 0:
-                start = 0
-
-        logger.info(f"Text chunked successfully into {len(chunks)} chunks")
-        return chunks
-
-    except Exception as e:
-        logger.error(f"Error chunking text: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
-
-def looks_garbled(text):
-    if not text: return True
-    non_ascii = sum(1 for c in text if ord(c) > 127)
-    return (non_ascii / max(len(text), 1)) > 0.3
-
-def extract_text_from_pdf(file_path, kb, source_name=None):
-    logger.info(f"Starting PDF text extraction from: {file_path}")
-
-    # if not os.path.exists(file_path):
-    #     logger.error(f"PDF file not found: {file_path}")
-    #     raise FileNotFoundError(f"PDF file not found: {file_path}")
-
-    source_name = source_name or Path(file_path).name
-
-    try:
-        logger.info(f"Opening PDF document: {file_path}")
-        with pdfplumber.open(file_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                text = page.extract_text()
-                if not text or looks_garbled(text):
-                    images = convert_from_path(file_path, first_page=page_num+1, last_page=page_num+1, dpi=300)
-                    text = pytesseract.image_to_string(images[0], lang="eng")
-                text = clean_text(text)
-                logger.info(f"PDF text extraction completed. Total cleaned text length: {len(text)} characters")
-                # kb.add(
-                #     documents=chunks,
-                #     metadatas=metadata,
-                #     ids=chunk_ids
-                # )
-                # Prepare metadata
-
-                chunks = chunk_text(text)
-                metadata = [{"source": file_path, "chunk_index": i} for i in range(len(chunks))]
-
-                # Verify KB has embedding function
-                try:
-                    # Test that the KB can handle embeddings by checking its configuration
-                    kb_metadata = kb._embedding_function
-                    if kb_metadata is None:
-                        logger.error("Knowledge base does not have an embedding function configured")
-                        raise RuntimeError("Knowledge base missing embedding function")
-                except AttributeError:
-                    logger.warning("Could not verify KB embedding function, proceeding with add operation...")
-
-                if not chunks:
-                    logger.warning("No chunks created from PDF text")
-                    return 0
-                logger.info(f"Adding {len(chunks)} chunks to knowledge base...")
-                chunk_ids = [f"{os.path.basename(file_path)}_chunk_{i}" for i in range(len(chunks))]
-                try:
-                    # for chunk in chunk_text(text):
-                    #  kb.add(
-                    #      documents=[chunk],
-                    #      ids=[str(uuid.uuid4())],
-                    #      metadatas=[{"source": "pdf", "file": source_name, "page": page_num}]
-                    #     )
-                    chunks = chunk_text(text)
-                    kb.add(
-                        documents=chunks,
-                        metadatas=metadata,
-                        ids=chunk_ids
-                    )
-                    logger.info(f"Successfully added {len(chunks)} chunks to KB. New total: {kb.count()}")
-                    return len(chunks)
-
-                except Exception as e:
-                    logger.error(f"Failed to add chunks to knowledge base: {str(e)}")
-                    logger.error(f"Traceback: {traceback.format_exc()}")
-                    raise
-
-    except Exception as e:
-        print(f"❌ Failed to process {file_path}: {e}")
-        logger.error(f"Error extracting text from PDF {file_path}: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
 
 def retrieve_from_kbs(query, user_id, top_k=3):
     """Retrieve relevant context from both user and global knowledge bases with logging"""
@@ -313,10 +287,50 @@ def retrieve_from_kbs(query, user_id, top_k=3):
         logger.error(f"Traceback: {traceback.format_exc()}")
         # Return empty context instead of raising to prevent breaking the main flow
         return ""
+
+def chunk_text(text: str,
+               max_tokens: int = 800,
+               overlap: int = 100,
+               model: str = "text-embedding-3-small"):
+    """Split text into overlapping chunks with logging"""
+    logger.info(f"Chunking text of length {len(text)} with max_chunk_size={max_tokens}, overlap={overlap}")
+
+    if not text or len(text) == 0:
+        logger.warning("Empty text provided for chunking")
+        return []
+
+    try:
+        enc = tiktoken.encoding_for_model(model)
+        tokens = enc.encode(text)
+
+        chunks = []
+        start = 0
+
+        while start < len(tokens):
+            end = min(start + max_tokens, len(tokens))
+            chunk_tokens = tokens[start:end]
+            chunk_text = enc.decode(chunk_tokens)
+
+            if chunk_text.strip():
+                chunks.append(chunk_text)
+
+            if end >= len(tokens):
+                break
+
+            start = end - overlap  # move back by overlap for context continuity
+
+        logger.info(f"Text chunked successfully into {len(chunks)} chunks")
+        return chunks
+    except Exception as e:
+        logger.error(f"Error chunking text: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
+
+
 def init_global_kb(folder=Path("./knowledge_base_files")):
     folder.mkdir(exist_ok=True)
     existing = global_kb.get(include=["metadatas"])
     indexed_files = set(meta.get("file") for meta in existing["metadatas"]) if existing else set()
     for file in folder.glob("*.pdf"):
         if file.name in indexed_files: continue
-        extract_text_from_pdf(str(file), global_kb, source_name=file.name)
+        # extract_text_from_pdf(str(file), global_kb, source_name=file.name)

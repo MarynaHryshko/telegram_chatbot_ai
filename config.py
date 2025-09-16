@@ -20,3 +20,5 @@ INIT_KB_PATH = "./knowledge_base_files"
 # Max chars in GPT context
 MAX_CONTEXT_CHARS = 3000
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+EMBEDDING_MODEL_NAME = "text-embedding-3-small"
+EMBEDDINGS_DIR = "./embeddings"

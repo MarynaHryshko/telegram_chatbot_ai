@@ -7,9 +7,9 @@ from celery import Celery
 from celery.signals import after_setup_logger, worker_ready, worker_shutdown
 from celery.utils.log import get_task_logger
 from openai import OpenAI
-from kb_utils import extract_text_from_pdf, get_user_kb, global_kb, retrieve_from_kbs
 from config import OPENAI_API_KEY, TELEGRAM_TOKEN
 from logging_config import setup_logging
+
 
 # Setup logging first
 setup_logging()
@@ -161,58 +161,9 @@ def process_user_message(self, user_id, message, context_text, processing_messag
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
-def process_pdf_task(self, file_path, kb_type, user_id):
-    """Process PDF with comprehensive logging"""
-    task_id = self.request.id
-    logger.info(f"[TASK-{task_id}] Starting PDF processing: {file_path} for user {user_id}")
-
-    try:
-        # Your PDF processing logic here
-        # text = extract_text_from_pdf(file_path)
-        # ... process and store in KB
-        #text = extract_text_from_pdf(file_path)
-        kb = global_kb if kb_type == "global" else get_user_kb(user_id)
-        chunks_added = extract_text_from_pdf(file_path, kb)
-        logger.info(f"[TASK-{task_id}] PDF processing completed successfully")
-
-        # Notify user
-        # requests.post(
-        #     f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        #     json={"chat_id": user_id, "text": "✅ PDF processed successfully!"},
-        #     timeout=10
-        # )
-
-        # ✅ Push confirmation to Telegram
-        msg = (
-            f"✅ PDF successfully added to your personal knowledge base ({chunks_added} chunks)."
-            if kb_type == "user" else
-            f"✅ PDF added to the global knowledge base ({chunks_added} chunks)."
-        )
-
-        logger.info(f"[TASK-{task_id}] PDF processing completed successfully")
-
-        # Notify user
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": user_id, "text": msg},
-            timeout=10
-        )
-
-        return {"status": "success", "file_path": file_path}
-
-    except Exception as e:
-        error_msg = f"[TASK-{task_id}] Error processing PDF {file_path}: {str(e)}"
-        logger.error(error_msg)
-        logger.error(f"[TASK-{task_id}] Traceback: {traceback.format_exc()}")
-
-        # Notify user of error
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                json={"chat_id": user_id, "text": "⚠️ Failed to process PDF. Please try again."},
-                timeout=10
-            )
-        except Exception as send_error:
-            logger.error(f"[TASK-{task_id}] Failed to send PDF error message: {send_error}")
-
-        raise e
+def notify_user(self, user_id, msg):
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        json={"chat_id": user_id, "text": msg},
+        timeout=10
+    )

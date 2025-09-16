@@ -89,11 +89,12 @@ async def webhook(request: Request):
                 await file.download_to_drive(path)
 
                 kb_type = "global" if is_admin(user_id) else "user"
+                await bot.send_message(chat_id=user_id, text="✅ PDF queued for processing")
                 ok = send_to_celery(user_id, path, kb_type)
 
                 if ok:
                     logger.info("PDF task successfully enqueued")
-                    await bot.send_message(chat_id=user_id, text="✅ PDF queued for processing")
+                    #await bot.send_message(chat_id=user_id, text="✅ PDF queued for processing")
                 else:
                     logger.error("Failed to enqueue PDF task")
                     await bot.send_message(chat_id=user_id, text="⚠️ Could not queue PDF for processing")
