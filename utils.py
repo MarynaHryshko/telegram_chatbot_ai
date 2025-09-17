@@ -1,7 +1,8 @@
 # utils.py
 import logging
 from tasks import process_user_message, notify_user
-from preprocess_pdf import preprocess_pdf, embed_json
+from preprocess_pdf import preprocess_pdf
+from embeddings import embed_json_smart
 from pathlib import Path
 from kb_utils import add_embeddings_to_kb
 
@@ -19,7 +20,7 @@ def send_to_celery(user_id, message_or_path, context_or_type, processing_message
             # Step 1: preprocess PDF outside Celery (extract text + OCR if needed)
             logger.info(f"Preprocessing PDF: {file_path}")
             preprocessed_json = preprocess_pdf(file_path)  # returns path to JSON
-            embeddings = embed_json(preprocessed_json) # returns path to embeddings file
+            embeddings = embed_json_smart(preprocessed_json) # returns path to embeddings file
             add_embeddings_to_kb(embeddings, kb_type, user_id)
             # Call Celery task
             notify_user.delay(user_id, "✅ PDF processed")

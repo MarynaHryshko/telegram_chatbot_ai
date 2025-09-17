@@ -4,19 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="8701be4f-be35-4ada-98dc-02538650c96d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/telegramChatbot.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/kb_utils.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/run_bot.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tasks.py" afterDir="false" />
+    <list default="true" id="8701be4f-be35-4ada-98dc-02538650c96d" name="Changes" comment="Works, but need architecture improvements">
+      <change afterPath="$PROJECT_DIR$/embeddings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kb_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/kb_utils.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/preprocess_pdf.py" beforeDir="false" afterPath="$PROJECT_DIR$/preprocess_pdf.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -42,15 +35,19 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.main.executor": "Run",
-    "Python.run_bot.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "master"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.bot_runner.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastapi_start_chatbot.executor&quot;: &quot;Run&quot;,
+    &quot;Python.kb_utils.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.run_bot.executor&quot;: &quot;Run&quot;,
+    &quot;Python.tasks.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="telegramChatbot" />
@@ -91,6 +88,102 @@
       <option name="presentableId" value="Default" />
       <updated>1756981419449</updated>
     </task>
+    <task id="LOCAL-00001" summary="Main starts chatbot">
+      <option name="closed" value="true" />
+      <created>1757522106391</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1757522106391</updated>
+    </task>
+    <task id="LOCAL-00002" summary="bot_runner starts chatbot with FastAPI and webhooks">
+      <option name="closed" value="true" />
+      <created>1757580482928</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1757580482928</updated>
+    </task>
+    <task id="LOCAL-00003" summary="bot_runner starts chatbot with FastAP, webhooks, Redis and Celery">
+      <option name="closed" value="true" />
+      <created>1757580764117</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1757580764117</updated>
+    </task>
+    <task id="LOCAL-00004" summary="works but not always">
+      <option name="closed" value="true" />
+      <created>1757618817330</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1757618817330</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Bor works! With redis+Celery+fast API">
+      <option name="closed" value="true" />
+      <created>1757653524615</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1757653524615</updated>
+    </task>
+    <task id="LOCAL-00006" summary="feat: Centralized logging and message cleanup v2.0&#10;&#10;- Add unified logging to logs/bot.log with task ID tracking&#10;- Auto-delete processing messages when answers arrive&#10;- Enhance error handling and API timeout management&#10;- Improve Celery reliability with better configuration&#10;- Add comprehensive debugging for message processing pipeline">
+      <option name="closed" value="true" />
+      <created>1757654431283</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1757654431283</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Logging updated with TimedRotatingFileHandler. Current logfile is bot.log, previus marked with date, logs are kept 1 week.">
+      <option name="closed" value="true" />
+      <created>1757913435299</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1757913435299</updated>
+    </task>
+    <task id="LOCAL-00008" summary="PDF files are adding to KB, but the process is too long">
+      <option name="closed" value="true" />
+      <created>1757918184905</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1757918184905</updated>
+    </task>
+    <task id="LOCAL-00009" summary="Works, but need architecture improvements">
+      <option name="closed" value="true" />
+      <created>1758002997380</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1758002997380</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
+  </component>
+  <component name="Vcs.Log.History.Properties">
+    <option name="COLUMN_ID_ORDER">
+      <list>
+        <option value="Default.Root" />
+        <option value="Default.Author" />
+        <option value="Default.Date" />
+        <option value="Default.Subject" />
+        <option value="Space.CommitStatus" />
+      </list>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Main starts chatbot" />
+    <MESSAGE value="bot_runner starts chatbot with FastAPI and webhooks" />
+    <MESSAGE value="bot_runner starts chatbot with FastAP, webhooks, Redis and Celery" />
+    <MESSAGE value="works but not always" />
+    <MESSAGE value="Bor works! With redis+Celery+fast API" />
+    <MESSAGE value="feat: Centralized logging and message cleanup v2.0&#10;&#10;- Add unified logging to logs/bot.log with task ID tracking&#10;- Auto-delete processing messages when answers arrive&#10;- Enhance error handling and API timeout management&#10;- Improve Celery reliability with better configuration&#10;- Add comprehensive debugging for message processing pipeline" />
+    <MESSAGE value="Logging updated with TimedRotatingFileHandler. Current logfile is bot.log, previus marked with date, logs are kept 1 week." />
+    <MESSAGE value="PDF files are adding to KB, but the process is too long" />
+    <MESSAGE value="Works, but need architecture improvements" />
+    <option name="LAST_COMMIT_MESSAGE" value="Works, but need architecture improvements" />
   </component>
 </project>

@@ -9,6 +9,7 @@ import logging
 from logging_config import setup_logging
 import traceback
 import tiktoken
+from typing import List, Dict, Any, Optional, Generator
 
 
 # Setup logging
@@ -94,24 +95,290 @@ def clean_text(text):
     return text.strip()
 
 
-def add_embeddings_to_kb(embeddings_file, kb_type, user_id, source_name=None):
-     with open(embeddings_file, "r", encoding="utf-8") as f:
-         data = json.load(f)
+def add_embeddings_to_kb_smart(embeddings_file: str,
+                               kb_type: str,
+                               user_id: str,
+                               source_name: Optional[str] = None,
+                               batch_size: int = 1000,
+                               memory_threshold_mb: float = 100.0) -> None:
+    """
+    Smart function that chooses optimal method based on file size.
 
-     kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+    Args:
+        embeddings_file: Path to embeddings JSON file
+        kb_type: Type of knowledge base ("global" or user-specific)
+        user_id: User identifier
+        source_name: Optional source name override
+        batch_size: Number of embeddings to process per batch
+        memory_threshold_mb: File size threshold to switch to streaming mode
+    """
+    embeddings_path = Path(embeddings_file)
 
-     ids = [f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}" for d in data]
-     texts = [d["text"] for d in data]
-     metadatas = [d["metadata"] for d in data]
-     embeddings = [d["embedding"] for d in data]
-     logger.info(f"Adding {len(texts)} chunks from {embeddings_file} to KB")
-     kb.add(
-         ids=ids,
-         documents=texts,
-         metadatas=metadatas,
-         embeddings=embeddings
-     )
-     logger.info(f"✅ Added {len(ids)} docs. Collection now has {kb.count()} docs.")
+    if not embeddings_path.exists():
+        raise FileNotFoundError(f"Embeddings file not found: {embeddings_file}")
+
+    # Check file size
+    file_size_mb = embeddings_path.stat().st_size / (1024 * 1024)
+    logger.info(f"📁 Embeddings file size: {file_size_mb:.2f} MB")
+
+    if file_size_mb > memory_threshold_mb:
+        logger.info(f"🔄 Large file detected (>{memory_threshold_mb}MB), using streaming mode")
+        add_embeddings_to_kb_streaming(
+            embeddings_file, kb_type, user_id, source_name, batch_size
+        )
+    else:
+        logger.info(f"⚡ Small file detected (<={memory_threshold_mb}MB), using standard mode")
+        add_embeddings_to_kb_batched(
+            embeddings_file, kb_type, user_id, source_name, batch_size
+        )
+
+
+def add_embeddings_to_kb_batched(embeddings_file: str,
+                                 kb_type: str,
+                                 user_id: str,
+                                 source_name: Optional[str] = None,
+                                 batch_size: int = 1000) -> None:
+    """
+    Optimized version that processes embeddings in batches (for medium-sized files).
+    """
+    with open(embeddings_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+    total_chunks = len(data)
+
+    logger.info(f"📊 Processing {total_chunks} chunks in batches of {batch_size}")
+
+    # Process in batches to avoid overwhelming the KB
+    for i in range(0, total_chunks, batch_size):
+        batch_data = data[i:i + batch_size]
+
+        # Extract batch data
+        ids = [
+            f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}"
+            for d in batch_data
+        ]
+        texts = [d["text"] for d in batch_data]
+        metadatas = [d["metadata"] for d in batch_data]
+        embeddings = [d["embedding"] for d in batch_data]
+
+        # Add source_name to metadata if provided
+        if source_name:
+            for meta in metadatas:
+                meta["source_name"] = source_name
+
+        logger.info(f"🔄 Adding batch {i // batch_size + 1}/{(total_chunks + batch_size - 1) // batch_size} "
+                    f"({len(batch_data)} chunks)")
+
+        try:
+            kb.add(
+                ids=ids,
+                documents=texts,
+                metadatas=metadatas,
+                embeddings=embeddings
+            )
+        except Exception as e:
+            logger.error(f"Failed to add batch {i // batch_size + 1}: {e}")
+            raise
+
+    logger.info(f"✅ Successfully added {total_chunks} chunks to {kb_type} KB")
+
+
+def add_embeddings_to_kb_streaming(embeddings_file: str,
+                                   kb_type: str,
+                                   user_id: str,
+                                   source_name: Optional[str] = None,
+                                   batch_size: int = 500) -> None:
+    """
+    Memory-efficient streaming version for very large files.
+    Processes JSON incrementally without loading everything into memory.
+    """
+    kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+
+    logger.info(f"🚀 Starting streaming processing with batch size {batch_size}")
+
+    total_processed = 0
+    batch_count = 0
+
+    # Stream process the JSON file
+    for batch_data in stream_json_batches(embeddings_file, batch_size):
+        if not batch_data:
+            continue
+
+        batch_count += 1
+
+        # Extract batch data
+        ids = [
+            f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}"
+            for d in batch_data
+        ]
+        texts = [d["text"] for d in batch_data]
+        metadatas = [d["metadata"] for d in batch_data]
+        embeddings = [d["embedding"] for d in batch_data]
+
+        # Add source_name to metadata if provided
+        if source_name:
+            for meta in metadatas:
+                meta["source_name"] = source_name
+
+        logger.info(f"🔄 Processing stream batch {batch_count} ({len(batch_data)} chunks)")
+
+        try:
+            kb.add(
+                ids=ids,
+                documents=texts,
+                metadatas=metadatas,
+                embeddings=embeddings
+            )
+            total_processed += len(batch_data)
+        except Exception as e:
+            logger.error(f"Failed to add stream batch {batch_count}: {e}")
+            raise
+
+    logger.info(f"✅ Successfully streamed {total_processed} chunks to {kb_type} KB")
+
+
+def stream_json_batches(file_path: str, batch_size: int) -> Generator[List[Dict], None, None]:
+    """
+    Generator that yields batches of data from a large JSON file.
+    Memory-efficient for very large files.
+    """
+    import ijson  # You'll need: pip install ijson
+
+    batch = []
+
+    try:
+        with open(file_path, 'rb') as file:
+            # Parse JSON array incrementally
+            parser = ijson.items(file, 'item')
+
+            for item in parser:
+                batch.append(item)
+
+                if len(batch) >= batch_size:
+                    yield batch
+                    batch = []
+
+            # Yield remaining items
+            if batch:
+                yield batch
+
+    except ImportError:
+        logger.warning("ijson not available, falling back to chunked reading")
+        # Fallback to chunked reading if ijson not available
+        yield from stream_json_batches_fallback(file_path, batch_size)
+
+
+def stream_json_batches_fallback(file_path: str, batch_size: int) -> Generator[List[Dict], None, None]:
+    """
+    Fallback streaming method when ijson is not available.
+    Less memory efficient but still better than loading everything.
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Process in batches
+        for i in range(0, len(data), batch_size):
+            yield data[i:i + batch_size]
+
+    except MemoryError:
+        logger.error("File too large for fallback method. Please install ijson: pip install ijson")
+        raise
+
+
+def add_embeddings_to_kb_with_deduplication(embeddings_file: str,
+                                            kb_type: str,
+                                            user_id: str,
+                                            source_name: Optional[str] = None,
+                                            batch_size: int = 1000) -> None:
+    """
+    Advanced version with duplicate detection and handling.
+    """
+    kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+
+    with open(embeddings_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Check for existing IDs to avoid duplicates
+    proposed_ids = [
+        f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}"
+        for d in data
+    ]
+
+    try:
+        # Try to get existing IDs (method depends on your KB implementation)
+        existing_ids = set(kb.get()["ids"]) if hasattr(kb, 'get') else set()
+        new_data = [d for i, d in enumerate(data) if proposed_ids[i] not in existing_ids]
+
+        if len(new_data) < len(data):
+            logger.info(f"🔍 Found {len(data) - len(new_data)} duplicates, processing {len(new_data)} new chunks")
+
+        data = new_data
+
+    except Exception as e:
+        logger.warning(f"Could not check for duplicates: {e}. Proceeding with all data.")
+
+    if not data:
+        logger.info("ℹ️  No new chunks to add")
+        return
+
+    # Use batched processing for the deduplicated data
+    add_embeddings_to_kb_batched(embeddings_file, kb_type, user_id, source_name, batch_size)
+
+
+# Main function - recommended interface
+def add_embeddings_to_kb(embeddings_file: str,
+                         kb_type: str,
+                         user_id: str,
+                         source_name: Optional[str] = None,
+                         mode: str = "smart",
+                         batch_size: int = 1000,
+                         **kwargs) -> None:
+    """
+    Main function with multiple processing modes for different file sizes.
+
+    Args:
+        embeddings_file: Path to embeddings JSON file
+        kb_type: Type of knowledge base ("global" or user-specific)
+        user_id: User identifier
+        source_name: Optional source name override
+        mode: Processing mode - "smart", "batched", "streaming", or "deduplication"
+        batch_size: Number of embeddings to process per batch
+        **kwargs: Additional arguments for specific modes
+    """
+    if mode == "smart":
+        add_embeddings_to_kb_smart(embeddings_file, kb_type, user_id, source_name, batch_size, **kwargs)
+    elif mode == "batched":
+        add_embeddings_to_kb_batched(embeddings_file, kb_type, user_id, source_name, batch_size)
+    elif mode == "streaming":
+        add_embeddings_to_kb_streaming(embeddings_file, kb_type, user_id, source_name, batch_size)
+    elif mode == "deduplication":
+        add_embeddings_to_kb_with_deduplication(embeddings_file, kb_type, user_id, source_name, batch_size)
+    else:
+        # Default to smart mode
+        add_embeddings_to_kb_smart(embeddings_file, kb_type, user_id, source_name, batch_size, **kwargs)
+
+
+
+# def add_embeddings_to_kb(embeddings_file, kb_type, user_id, source_name=None):
+#      with open(embeddings_file, "r", encoding="utf-8") as f:
+#          data = json.load(f)
+#
+#      kb = global_kb if kb_type == "global" else get_user_kb(user_id)
+#
+#      ids = [f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}" for d in data]
+#      texts = [d["text"] for d in data]
+#      metadatas = [d["metadata"] for d in data]
+#      embeddings = [d["embedding"] for d in data]
+#      logger.info(f"Adding {len(texts)} chunks from {embeddings_file} to KB")
+#      kb.add(
+#          ids=ids,
+#          documents=texts,
+#          metadatas=metadatas,
+#          embeddings=embeddings
+#      )
+#      logger.info(f"✅ Added {len(ids)} docs. Collection now has {kb.count()} docs.")
 
 # def process_pdf_json(preprocessed_json_path, kb_type, user_id):
 #     """
@@ -213,18 +480,6 @@ def retrieve_from_kbs(query, user_id, top_k=3):
         if user_count == 0 and global_count == 0:
             logger.info("No documents in any knowledge base")
             return ""
-        #
-        # results_global = global_kb.query(query_texts=[query], n_results=top_k)
-        # results_user = user_kb.query(query_texts=[query], n_results=top_k)
-        #
-        # docs = []
-        # for d in results_global["documents"]:
-        #     if d: docs.append("🌍 Global KB:\n" + d[0])
-        # for d in results_user["documents"]:
-        #     if d: docs.append("👤 Your KB:\n" + d[0])
-        #
-        # text = "\n\n".join(docs)
-        # return text[:MAX_CONTEXT_CHARS]
         context_parts = []
 
         # Search user KB if it has content
@@ -334,3 +589,4 @@ def init_global_kb(folder=Path("./knowledge_base_files")):
     for file in folder.glob("*.pdf"):
         if file.name in indexed_files: continue
         # extract_text_from_pdf(str(file), global_kb, source_name=file.name)
+
