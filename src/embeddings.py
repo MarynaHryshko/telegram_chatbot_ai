@@ -1,18 +1,28 @@
 import json
-import numpy as np
-import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 from chromadb.utils import embedding_functions
-from logging_config import setup_logging
-from config import EMBEDDINGS_DIR, EMBEDDING_MODEL_NAME, OPENAI_API_KEY
+from src.logging_config import setup_logging
+from src.config import EMBEDDINGS_DIR, EMBEDDING_MODEL_NAME, OPENAI_API_KEY
 import tiktoken
 import traceback
+from openai import OpenAI
 
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+
+def get_embeddings_function():
+   # client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # Initialize embedding function once
+    embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=OPENAI_API_KEY,
+        model_name=EMBEDDING_MODEL_NAME
+    )
+    return embedding_function
 
 
 def embed_json_smart(json_path: str,
@@ -123,11 +133,14 @@ def embed_json_standard(json_path: str, batch_size: int = 100, skip_existing: bo
 
     print(f"📝 Processing {len(all_chunks)} chunks from {len(data['pages'])} pages")
 
-    # Initialize embedding function once
-    embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=OPENAI_API_KEY,
-        model_name=EMBEDDING_MODEL_NAME
-    )
+    # client = OpenAI(api_key=OPENAI_API_KEY)
+    #
+    # # Initialize embedding function once
+    # embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+    #     client=client,
+    #     model_name=EMBEDDING_MODEL_NAME
+    # )
+    embedding_function=get_embeddings_function()
 
     # Process embeddings in batches
     all_vectors = []
@@ -183,89 +196,8 @@ def embed_json_memory_efficient(json_path: str,
     Returns:
         Path to the generated embeddings file
     """
-    json_path = Path(json_path)
-    file_name = json_path.stem
-    embeddings_file = Path(EMBEDDINGS_DIR) / f"{file_name}.embeddings.json"
-
-    # Skip if embeddings already exist
-    if skip_existing and embeddings_file.exists():
-        print(f"⏭️  Embeddings already exist: {embeddings_file}")
-        return str(embeddings_file)
-
-    # Load JSON data
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=OPENAI_API_KEY,
-        model_name=EMBEDDING_MODEL_NAME
-    )
-
-    embeddings_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Stream processing - write records as we generate them
-    with open(embeddings_file, "w", encoding="utf-8") as f:
-        f.write("[\n")
-        first_record = True
-
-        batch_chunks = []
-        batch_metadata = []
-
-        for page_num, text in enumerate(data["pages"]):
-            if not text or not text.strip():
-                continue
-
-            chunks = chunk_text(text)
-            if not chunks:
-                continue
-
-            # Add to current batch
-            batch_chunks.extend(chunks)
-            batch_metadata.extend([
-                {"source": data["file_name"], "page": page_num, "chunk_index": i}
-                for i in range(len(chunks))
-            ])
-
-            # Process batch when it reaches batch_size
-            if len(batch_chunks) >= batch_size:
-                vectors = embedding_function(batch_chunks)
-
-                # Write batch records
-                for text, meta, vec in zip(batch_chunks, batch_metadata, vectors):
-                    if not first_record:
-                        f.write(",\n")
-                    first_record = False
-
-                    record = {
-                        "text": text,
-                        "metadata": meta,
-                        "embedding": vec.tolist() if hasattr(vec, 'tolist') else vec
-                    }
-                    json.dump(record, f, ensure_ascii=False)
-
-                # Clear batch
-                batch_chunks.clear()
-                batch_metadata.clear()
-
-        # Process remaining chunks
-        if batch_chunks:
-            vectors = embedding_function(batch_chunks)
-            for text, meta, vec in zip(batch_chunks, batch_metadata, vectors):
-                if not first_record:
-                    f.write(",\n")
-                first_record = False
-
-                record = {
-                    "text": text,
-                    "metadata": meta,
-                    "embedding": vec.tolist() if hasattr(vec, 'tolist') else vec
-                }
-                json.dump(record, f, ensure_ascii=False)
-
-        f.write("\n]")
-
-    print(f"✅ Saved embeddings to {embeddings_file} (streaming mode)")
-    return str(embeddings_file)
+    # Implementation hidden for demo purposes
+    raise NotImplementedError("Implementation hidden in public repository")
 
 
 # Additional utility functions for advanced file size analysis
@@ -277,31 +209,8 @@ def analyze_json_complexity(json_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with file analysis metrics
     """
-    json_path = Path(json_path)
-    file_size_mb = json_path.stat().st_size / (1024 * 1024)
-
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    # Calculate text complexity
-    total_text_length = sum(len(str(page)) for page in data.get("pages", []))
-    non_empty_pages = sum(1 for page in data.get("pages", []) if page and str(page).strip())
-    avg_page_length = total_text_length / max(non_empty_pages, 1)
-
-    # Estimate chunks (rough calculation)
-    estimated_chunks = total_text_length // 500  # assuming ~500 chars per chunk
-
-    analysis = {
-        "file_size_mb": file_size_mb,
-        "total_pages": len(data.get("pages", [])),
-        "non_empty_pages": non_empty_pages,
-        "total_text_length": total_text_length,
-        "avg_page_length": avg_page_length,
-        "estimated_chunks": estimated_chunks,
-        "complexity_score": (file_size_mb * 0.3 + estimated_chunks * 0.0001 + avg_page_length * 0.00001)
-    }
-
-    return analysis
+    # Implementation hidden for demo purposes
+    raise NotImplementedError("Implementation hidden in public repository")
 
 
 def embed_json_adaptive(json_path: str, skip_existing: bool = True) -> str:

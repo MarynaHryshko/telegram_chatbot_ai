@@ -7,9 +7,9 @@ import time
 import socket
 from pyngrok import ngrok
 import requests
-from config import TELEGRAM_TOKEN
+from src.config import TELEGRAM_TOKEN
 import logging
-from logging_config import setup_logging
+from src.logging_config import setup_logging
 
 # Setup logging
 setup_logging()

@@ -1,11 +1,12 @@
 # main.py
 from fastapi import FastAPI, Request
-from config import TELEGRAM_TOKEN, ADMINS, ALLOWED_USERS
+from src.config import TELEGRAM_TOKEN, ADMINS, ALLOWED_USERS, UPLOADS_DIR
 import logging
 from telegram import Bot
-from kb_utils import retrieve_from_kbs, get_user_kb
-from utils import send_to_celery
-from logging_config import setup_logging
+from src.kb_utils import retrieve_from_kbs, get_user_kb
+from src.utils import send_to_celery
+from src.logging_config import setup_logging
+from src.history_redis import add_message, get_history, clear_history
 
 # Setup logging
 setup_logging()
@@ -38,6 +39,7 @@ async def webhook(request: Request):
         msg = data["message"]
         user_id = msg["from"]["id"]
 
+
         logger.info(f"Processing message from user {user_id}: {msg}")
 
         if not is_allowed(user_id):
@@ -48,20 +50,33 @@ async def webhook(request: Request):
         if "text" in msg:
             text = msg["text"][:500]
             logger.info(f"Text message from user {user_id}: {text[:100]}...")
+            # Save user message
+            add_message(user_id, "user", text)
 
             try:
                 context_text = retrieve_from_kbs(text, user_id)
                 logger.info(f"Retrieved context length: {len(context_text) if context_text else 0}")
 
+                history = get_history(user_id)
+                logger.info(f"Retrieved history length: {len(history) if history else 0}")
+
                 # Send processing message and get its ID
                 logger.info("Sending processing message...")
+
+                full_context = {
+                    "history": history,
+                    "kb_context": context_text,
+                    "question": text
+                }
+                logger.info(f"Processing message full_context: {full_context}")
+
                 processing_msg = await bot.send_message(chat_id=user_id, text="⏳ Processing your question...")
                 processing_message_id = processing_msg.message_id
                 logger.info(f"Processing message sent with ID: {processing_message_id}")
 
                 # Send to Celery with the processing message ID
                 logger.info("Sending task to Celery...")
-                ok = send_to_celery(user_id, text, context_text, processing_message_id)
+                ok = send_to_celery(user_id, text, full_context, processing_message_id)
 
                 if not ok:
                     logger.error("Failed to enqueue task")
@@ -85,7 +100,7 @@ async def webhook(request: Request):
                 logger.info(f"Document received from user {user_id}: {file_name}")
 
                 file = await bot.get_file(file_id)
-                path = f"./uploads/{file_name}"
+                path = f"{UPLOADS_DIR}/{file_name}"
                 await file.download_to_drive(path)
 
                 kb_type = "global" if is_admin(user_id) else "user"

@@ -3,13 +3,14 @@ import json
 import re
 from pathlib import Path
 import chromadb
-from chromadb.utils import embedding_functions
-from config import PERSIST_DIR, OPENAI_API_KEY, EMBEDDING_MODEL_NAME#, TELEGRAM_TOKEN, MAX_CONTEXT_CHARS
+#from chromadb.utils import embedding_functions
+from src.config import PERSIST_DIR, OPENAI_API_KEY, EMBEDDING_MODEL_NAME#, TELEGRAM_TOKEN, MAX_CONTEXT_CHARS
 import logging
-from logging_config import setup_logging
+from src.logging_config import setup_logging
 import traceback
 import tiktoken
 from typing import List, Dict, Any, Optional, Generator
+from src.embeddings import get_embeddings_function
 
 
 # Setup logging
@@ -36,17 +37,12 @@ except Exception as e:
 # Initialize embedding function
 try:
     logger.info("Setting up embedding function...")
-    embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=OPENAI_API_KEY, model_name=EMBEDDING_MODEL_NAME
-    )
+    embedding_function = get_embeddings_function()
     logger.info("Embedding function setup completed")
 except Exception as e:
     logger.error(f"Failed to setup embedding function: {str(e)}")
     logger.error(f"Traceback: {traceback.format_exc()}")
     raise
-
-# Delete old collection
-#chroma_client.delete_collection("global_kb")
 
 # Initialize global knowledge base
 try:
@@ -141,47 +137,8 @@ def add_embeddings_to_kb_batched(embeddings_file: str,
     """
     Optimized version that processes embeddings in batches (for medium-sized files).
     """
-    with open(embeddings_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    kb = global_kb if kb_type == "global" else get_user_kb(user_id)
-    total_chunks = len(data)
-
-    logger.info(f"📊 Processing {total_chunks} chunks in batches of {batch_size}")
-
-    # Process in batches to avoid overwhelming the KB
-    for i in range(0, total_chunks, batch_size):
-        batch_data = data[i:i + batch_size]
-
-        # Extract batch data
-        ids = [
-            f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}"
-            for d in batch_data
-        ]
-        texts = [d["text"] for d in batch_data]
-        metadatas = [d["metadata"] for d in batch_data]
-        embeddings = [d["embedding"] for d in batch_data]
-
-        # Add source_name to metadata if provided
-        if source_name:
-            for meta in metadatas:
-                meta["source_name"] = source_name
-
-        logger.info(f"🔄 Adding batch {i // batch_size + 1}/{(total_chunks + batch_size - 1) // batch_size} "
-                    f"({len(batch_data)} chunks)")
-
-        try:
-            kb.add(
-                ids=ids,
-                documents=texts,
-                metadatas=metadatas,
-                embeddings=embeddings
-            )
-        except Exception as e:
-            logger.error(f"Failed to add batch {i // batch_size + 1}: {e}")
-            raise
-
-    logger.info(f"✅ Successfully added {total_chunks} chunks to {kb_type} KB")
+    # Implementation hidden for demo purposes
+    raise NotImplementedError("Implementation hidden in public repository")
 
 
 def add_embeddings_to_kb_streaming(embeddings_file: str,
@@ -193,57 +150,15 @@ def add_embeddings_to_kb_streaming(embeddings_file: str,
     Memory-efficient streaming version for very large files.
     Processes JSON incrementally without loading everything into memory.
     """
-    kb = global_kb if kb_type == "global" else get_user_kb(user_id)
-
-    logger.info(f"🚀 Starting streaming processing with batch size {batch_size}")
-
-    total_processed = 0
-    batch_count = 0
-
-    # Stream process the JSON file
-    for batch_data in stream_json_batches(embeddings_file, batch_size):
-        if not batch_data:
-            continue
-
-        batch_count += 1
-
-        # Extract batch data
-        ids = [
-            f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}"
-            for d in batch_data
-        ]
-        texts = [d["text"] for d in batch_data]
-        metadatas = [d["metadata"] for d in batch_data]
-        embeddings = [d["embedding"] for d in batch_data]
-
-        # Add source_name to metadata if provided
-        if source_name:
-            for meta in metadatas:
-                meta["source_name"] = source_name
-
-        logger.info(f"🔄 Processing stream batch {batch_count} ({len(batch_data)} chunks)")
-
-        try:
-            kb.add(
-                ids=ids,
-                documents=texts,
-                metadatas=metadatas,
-                embeddings=embeddings
-            )
-            total_processed += len(batch_data)
-        except Exception as e:
-            logger.error(f"Failed to add stream batch {batch_count}: {e}")
-            raise
-
-    logger.info(f"✅ Successfully streamed {total_processed} chunks to {kb_type} KB")
-
+    # Implementation hidden for demo purposes
+    raise NotImplementedError("Implementation hidden in public repository")
 
 def stream_json_batches(file_path: str, batch_size: int) -> Generator[List[Dict], None, None]:
     """
     Generator that yields batches of data from a large JSON file.
     Memory-efficient for very large files.
     """
-    import ijson  # You'll need: pip install ijson
+    import ijson
 
     batch = []
 
@@ -359,113 +274,6 @@ def add_embeddings_to_kb(embeddings_file: str,
         # Default to smart mode
         add_embeddings_to_kb_smart(embeddings_file, kb_type, user_id, source_name, batch_size, **kwargs)
 
-
-
-# def add_embeddings_to_kb(embeddings_file, kb_type, user_id, source_name=None):
-#      with open(embeddings_file, "r", encoding="utf-8") as f:
-#          data = json.load(f)
-#
-#      kb = global_kb if kb_type == "global" else get_user_kb(user_id)
-#
-#      ids = [f"{d['metadata']['source']}_p{d['metadata']['page']}_c{d['metadata']['chunk_index']}" for d in data]
-#      texts = [d["text"] for d in data]
-#      metadatas = [d["metadata"] for d in data]
-#      embeddings = [d["embedding"] for d in data]
-#      logger.info(f"Adding {len(texts)} chunks from {embeddings_file} to KB")
-#      kb.add(
-#          ids=ids,
-#          documents=texts,
-#          metadatas=metadatas,
-#          embeddings=embeddings
-#      )
-#      logger.info(f"✅ Added {len(ids)} docs. Collection now has {kb.count()} docs.")
-
-# def process_pdf_json(preprocessed_json_path, kb_type, user_id):
-#     """
-#     Fully safe: reads preprocessed JSON, computes embeddings, adds to KB,
-#     and sends Telegram notification. No Celery heavy tasks needed.
-#     """
-#     try:
-#         # --- Load preprocessed JSON ---
-#         with open(preprocessed_json_path, "r", encoding="utf-8") as f:
-#             data = json.load(f)
-#
-#         all_chunks = []
-#         all_metadata = []
-#         all_ids = []
-#
-#         for page_num, text in enumerate(data["pages"]):
-#             if not text:
-#                 continue
-#             chunks = chunk_text(text)
-#             all_chunks.extend(chunks)
-#             all_metadata.extend([{"source": data["file_name"], "page": page_num, "chunk_index": i}
-#                                  for i in range(len(chunks))])
-#             all_ids.extend([f"{data['file_name']}_p{page_num}_c{i}" for i in range(len(chunks))])
-#
-#         if not all_chunks:
-#             logger.warning(f"No text found in {preprocessed_json_path}")
-#             return 0
-#
-#         # --- Compute embeddings (safe in main thread) ---
-#         embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-#             api_key=OPENAI_API_KEY,
-#             model_name=EMBEDDING_MODEL_NAME
-#         )
-#         embeddings = embedding_function(all_chunks)
-#
-#         # --- Add to KB ---
-#         kb = global_kb if kb_type == "global" else get_user_kb(user_id)
-#         kb.add(
-#             ids=all_ids,
-#             documents=all_chunks,
-#             metadatas=all_metadata,
-#             embeddings=embeddings
-#         )
-#
-#         chunks_added = len(all_chunks)
-#         logger.info(f"✅ Added {chunks_added} chunks from {data['file_name']} to KB")
-#
-#         # --- Notify user on Telegram ---
-#         msg = (f"✅ PDF successfully added to your personal KB ({chunks_added} chunks)."
-#                if kb_type == "user" else
-#                f"✅ PDF added to the global KB ({chunks_added} chunks).")
-#         requests.post(
-#             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-#             json={"chat_id": user_id, "text": msg},
-#             timeout=10
-#         )
-#
-#         return chunks_added
-#
-#     except Exception as e:
-#         logger.error(f"Failed to process PDF JSON {preprocessed_json_path}: {e}")
-#         logger.error(traceback.format_exc())
-#         # Notify user of error
-#         try:
-#             requests.post(
-#                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-#                 json={"chat_id": user_id, "text": "⚠️ Failed to process PDF. Please try again."},
-#                 timeout=10
-#             )
-#         except Exception as send_error:
-#             logger.error(f"Failed to send Telegram error message: {send_error}")
-#         return 0
-
-# def test_kb_add(kb):
-#     try:
-#         # Test with minimal data
-#         logger.info("Starting KB add test ...")
-#         test_chunks = ["test document"]
-#         test_metadata = [{"source": "test", "page": 0, "chunk_index": 0}]
-#         test_ids = ["test_id_1"]
-#
-#         kb.add(documents=test_chunks, metadatas=test_metadata, ids=test_ids)
-#         logger.info("KB add test successful")
-#         return True
-#     except Exception as e:
-#         logger.error(f"KB add test failed: {e}")
-#         return False
 
 
 def retrieve_from_kbs(query, user_id, top_k=3):

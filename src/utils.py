@@ -1,10 +1,10 @@
 # utils.py
 import logging
-from tasks import process_user_message, notify_user
-from preprocess_pdf import preprocess_pdf
-from embeddings import embed_json_smart
+from src.tasks import process_user_message, notify_user
+from src.preprocess_pdf import preprocess_pdf
+from src.embeddings import embed_json_smart
 from pathlib import Path
-from kb_utils import add_embeddings_to_kb
+from src.kb_utils import add_embeddings_to_kb
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,17 @@ def send_to_celery(user_id, message_or_path, context_or_type, processing_message
         else:
             # Message processing
             logger.info(f"Enqueueing message task for user {user_id}: {message_or_path[:50]}...")
-            task = process_user_message.delay(user_id, message_or_path, context_or_type, processing_message_id)
+#            task = process_user_message.delay(user_id, message_or_path, context_or_type, processing_message_id)
+         # context_or_type is now a dict with {history, kb_context, question}
+            payload = {
+                "user_id": user_id,
+                "question": message_or_path,
+                "history": context_or_type.get("history", []),
+                "kb_context": context_or_type.get("kb_context", ""),
+                "processing_message_id": processing_message_id,
+            }
 
+            task = process_user_message.delay(payload)
         logger.info(f"Task enqueued successfully with ID: {task.id}")
         return True
 
